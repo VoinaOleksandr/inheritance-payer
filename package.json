@@ -1,0 +1,23 @@
+{
+  "name": "inheritance-distribution",
+  "version": "1.0.0",
+  "description": "Private inheritance distribution platform using FHE",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "clean": "hardhat clean"
+  },
+  "dependencies": {
+    "@fhevm/solidity": "^0.9.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@zama-fhe/relayer-sdk": "^0.3.0-5",
+    "dotenv": "^16.3.1",
+    "hardhat": "^2.27.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

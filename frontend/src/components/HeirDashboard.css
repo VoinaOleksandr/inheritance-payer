@@ -1,0 +1,54 @@
+.heir-dashboard {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  margin-bottom: var(--space-8);
+}
+
+.dashboard-header h1 {
+  margin-bottom: var(--space-2);
+}
+
+.heir-allocation-section {
+  margin-bottom: var(--space-8);
+}
+
+.decrypt-prompt {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.decrypt-prompt-content h3 {
+  margin-bottom: var(--space-3);
+}
+
+.decrypt-prompt-content p {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-6);
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.privacy-notice {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.privacy-notice p {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}

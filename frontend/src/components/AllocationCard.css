@@ -1,0 +1,55 @@
+.allocation-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  transition: border-color var(--transition-fast);
+}
+
+.allocation-card:hover {
+  border-color: var(--border-hover);
+}
+
+.allocation-card.claimed {
+  opacity: 0.7;
+}
+
+.allocation-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.allocation-card-header .badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.allocation-card-body {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.allocation-skeleton {
+  width: 120px;
+  height: 36px;
+}
+
+.allocation-amount {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.decrypt-btn {
+  width: 100%;
+}
+
+.allocation-card-actions {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
