@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useWallet, useFhevm, useInheritance } from "./hooks";
 import {
   Layout,
@@ -7,9 +7,14 @@ import {
   ExecutorDashboard,
   LoadingState,
 } from "./components";
+import { EstateSelector } from "./components/EstateSelector";
+import { CreateEstateModal } from "./components/CreateEstateModal";
+import { WelcomeScreen } from "./components/WelcomeScreen";
 import "./styles/global.css";
 
 function App() {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   const {
     address,
     signer,
@@ -28,25 +33,34 @@ function App() {
   } = useFhevm();
 
   const {
-    estateInfo,
-    isExecutor,
-    isHeir,
+    // Multi-estate state
+    myExecutorEstates,
+    myHeirEstates,
+    selectedEstateId,
+    currentEstate,
+    currentRole,
+    // Estate-specific data
     heirs,
     myAllocation,
     hasClaimed,
+    // Loading/error
     isLoading,
     error: inheritanceError,
-    loadEstateInfo: _loadEstateInfo,
-    decryptMyAllocation,
-    mintTokens,
-    setDistributionAsOperator,
-    depositTokens,
+    // Estate management
+    selectEstate,
+    createEstate,
+    // Estate operations
     addHeir,
     removeHeir,
     finalizeEstate,
     claimAllocation,
+    decryptMyAllocation,
     getHeirAllocation,
-    distributionAddress: _distributionAddress,
+    checkHeirClaimed,
+    // Token operations
+    mintTokens,
+    setDistributionAsOperator,
+    depositTokens,
   } = useInheritance(signer, address);
 
   // Initialize FHEVM after wallet connects
@@ -84,88 +98,85 @@ function App() {
     );
   }
 
-  // Show loading while estate info loads
-  if (isLoading && !estateInfo) {
-    return (
-      <Layout address={address} onDisconnect={disconnect}>
-        <LoadingState message="Loading estate information..." />
-      </Layout>
-    );
-  }
+  const hasEstates = myExecutorEstates.length > 0 || myHeirEstates.length > 0;
 
-  // Show error if no estate info and not loading
-  if (!estateInfo) {
-    return (
-      <Layout address={address} onDisconnect={disconnect}>
-        <div className="container">
-          <div className="error-message">
-            {inheritanceError || "Unable to load estate. Please check your contract configuration."}
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Check claimed status
-  const checkClaimed = async (_heirAddress: string): Promise<boolean> => {
-    // This would be better as part of the hook, but for simplicity
-    // we're using the hasClaimed state for the current user
-    // For other heirs, we'd need to call the contract
-    return false; // Simplified - executor sees all as not claimed initially
+  const handleCreateEstate = async (name: string): Promise<number> => {
+    const estateId = await createEstate(name);
+    selectEstate(estateId);
+    return estateId;
   };
 
-  // Render executor dashboard
-  if (isExecutor) {
-    return (
-      <Layout address={address} onDisconnect={disconnect}>
-        <ExecutorDashboard
-          estateInfo={estateInfo}
-          heirs={heirs}
-          isLoading={isLoading}
-          onAddHeir={addHeir}
-          onRemoveHeir={removeHeir}
-          onFinalize={finalizeEstate}
-          onMintTokens={mintTokens}
-          onSetupOperator={setDistributionAsOperator}
-          onDepositTokens={depositTokens}
-          onGetHeirAllocation={getHeirAllocation}
-          onCheckClaimed={checkClaimed}
-        />
-      </Layout>
-    );
-  }
-
-  // Render heir dashboard
-  if (isHeir) {
-    return (
-      <Layout address={address} onDisconnect={disconnect}>
-        <HeirDashboard
-          estateInfo={estateInfo}
-          heirCount={heirs.length}
-          myAllocation={myAllocation}
-          hasClaimed={hasClaimed}
-          isLoading={isLoading}
-          onDecryptAllocation={decryptMyAllocation}
-          onClaim={claimAllocation}
-        />
-      </Layout>
-    );
-  }
-
-  // Not executor or heir
+  // Main app with sidebar layout
   return (
     <Layout address={address} onDisconnect={disconnect}>
-      <div className="container">
-        <div className="card" style={{ textAlign: "center", padding: "var(--space-12)" }}>
-          <h2>Not Authorized</h2>
-          <p className="text-secondary mt-4">
-            Your address is not registered as an heir or executor for this estate.
-          </p>
-          <p className="text-muted mt-2">
-            Connected: {address}
-          </p>
-        </div>
+      <div className="app-container">
+        {/* Sidebar */}
+        <aside className="sidebar">
+          <EstateSelector
+            executorEstates={myExecutorEstates}
+            heirEstates={myHeirEstates}
+            selectedId={selectedEstateId}
+            onSelect={selectEstate}
+            onCreate={() => setShowCreateModal(true)}
+          />
+        </aside>
+
+        {/* Main content */}
+        <main className="main-content">
+          {inheritanceError && (
+            <div className="error-banner">{inheritanceError}</div>
+          )}
+
+          {selectedEstateId === null ? (
+            <WelcomeScreen
+              hasEstates={hasEstates}
+              onCreate={() => setShowCreateModal(true)}
+            />
+          ) : isLoading && !currentEstate ? (
+            <LoadingState message="Loading estate..." />
+          ) : currentEstate && currentRole === "executor" ? (
+            <ExecutorDashboard
+              estateInfo={currentEstate}
+              heirs={heirs}
+              isLoading={isLoading}
+              onAddHeir={addHeir}
+              onRemoveHeir={removeHeir}
+              onFinalize={finalizeEstate}
+              onMintTokens={mintTokens}
+              onSetupOperator={setDistributionAsOperator}
+              onDepositTokens={depositTokens}
+              onGetHeirAllocation={getHeirAllocation}
+              onCheckClaimed={checkHeirClaimed}
+            />
+          ) : currentEstate && currentRole === "heir" ? (
+            <HeirDashboard
+              estateInfo={currentEstate}
+              heirCount={heirs.length}
+              myAllocation={myAllocation}
+              hasClaimed={hasClaimed}
+              isLoading={isLoading}
+              onDecryptAllocation={decryptMyAllocation}
+              onClaim={claimAllocation}
+            />
+          ) : currentEstate ? (
+            <div className="container">
+              <div className="card" style={{ textAlign: "center", padding: "var(--space-12)" }}>
+                <h2>Access Denied</h2>
+                <p className="text-secondary mt-4">
+                  You are not an executor or heir of this estate.
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </main>
       </div>
+
+      {/* Create estate modal */}
+      <CreateEstateModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreate={handleCreateEstate}
+      />
     </Layout>
   );
 }

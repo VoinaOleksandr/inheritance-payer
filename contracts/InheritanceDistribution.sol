@@ -8,167 +8,212 @@ import {IERC7984Receiver} from "./interfaces/IERC7984Receiver.sol";
 
 /**
  * @title InheritanceDistribution
- * @notice Private inheritance distribution where heirs only see their own allocations
+ * @notice Multi-estate private inheritance distribution where heirs only see their own allocations
  * @dev Uses FHE to encrypt allocation amounts, preventing heirs from seeing siblings' shares
  */
 contract InheritanceDistribution is IERC7984Receiver, ZamaEthereumConfig {
-    // Estate information
-    address public executor;
+    // Global state
+    uint256 public nextEstateId;
     IERC7984 public token;
-    uint256 public createdAt;
-    bool public finalized;
-    bool public active;
 
-    // Heir data
-    address[] public heirs;
-    mapping(address => bool) public isHeir;
-    mapping(address => euint64) private allocations;
-    mapping(address => bool) public claimed;
+    // Estate struct
+    struct Estate {
+        address executor;
+        uint256 createdAt;
+        bool finalized;
+        bool active;
+        string name;
+    }
 
-    // Contract's token balance (encrypted)
-    euint64 private contractBalance;
-    euint64 private totalAllocated;
+    // Core mappings (estateId as primary key)
+    mapping(uint256 => Estate) public estates;
+    mapping(uint256 => address[]) private estateHeirs;
+    mapping(uint256 => mapping(address => bool)) public isHeirOf;
+    mapping(uint256 => mapping(address => euint64)) private allocations;
+    mapping(uint256 => mapping(address => bool)) public claimed;
+    mapping(uint256 => euint64) private estateBalances;
+    mapping(uint256 => euint64) private totalAllocated;
+
+    // Index mappings for efficient queries
+    mapping(address => uint256[]) private executorEstates;
+    mapping(address => uint256[]) private heirEstates;
 
     // Events
-    event EstateCreated(address indexed executor, address indexed token);
-    event HeirAdded(address indexed heir);
-    event HeirRemoved(address indexed heir);
-    event EstateFinalized();
-    event AllocationClaimed(address indexed heir);
-    event TokensDeposited(address indexed from);
+    event EstateCreated(uint256 indexed estateId, address indexed executor, string name);
+    event HeirAdded(uint256 indexed estateId, address indexed heir);
+    event HeirRemoved(uint256 indexed estateId, address indexed heir);
+    event EstateFinalized(uint256 indexed estateId);
+    event AllocationClaimed(uint256 indexed estateId, address indexed heir);
+    event TokensDeposited(uint256 indexed estateId, address indexed from);
 
     // Errors
     error OnlyExecutor();
     error EstateAlreadyFinalized();
     error EstateNotFinalized();
     error EstateNotActive();
+    error EstateNotFound();
     error AlreadyHeir();
     error NotHeir();
     error AlreadyClaimed();
     error ZeroAddress();
     error InvalidToken();
+    error MissingEstateId();
 
-    modifier onlyExecutor() {
-        if (msg.sender != executor) revert OnlyExecutor();
+    // Modifiers
+    modifier onlyEstateExecutor(uint256 estateId) {
+        if (msg.sender != estates[estateId].executor) revert OnlyExecutor();
         _;
     }
 
-    modifier notFinalized() {
-        if (finalized) revert EstateAlreadyFinalized();
+    modifier notFinalized(uint256 estateId) {
+        if (estates[estateId].finalized) revert EstateAlreadyFinalized();
         _;
     }
 
-    modifier isEstateFinalized() {
-        if (!finalized) revert EstateNotFinalized();
+    modifier isEstateFinalized(uint256 estateId) {
+        if (!estates[estateId].finalized) revert EstateNotFinalized();
         _;
     }
 
-    modifier estateActive() {
-        if (!active) revert EstateNotActive();
+    modifier estateActive(uint256 estateId) {
+        if (!estates[estateId].active) revert EstateNotActive();
+        _;
+    }
+
+    modifier estateExists(uint256 estateId) {
+        if (estates[estateId].executor == address(0)) revert EstateNotFound();
         _;
     }
 
     /**
-     * @notice Create a new inheritance distribution estate
+     * @notice Initialize the contract with a token
      * @param _token Address of the ERC-7984 token to distribute
      */
     constructor(address _token) {
         if (_token == address(0)) revert ZeroAddress();
-
-        executor = msg.sender;
         token = IERC7984(_token);
-        createdAt = block.timestamp;
-        active = true;
+    }
 
-        // Initialize encrypted balances to zero
-        contractBalance = FHE.asEuint64(0);
-        totalAllocated = FHE.asEuint64(0);
+    /**
+     * @notice Create a new inheritance distribution estate
+     * @param name Human-readable name for the estate
+     * @return estateId The ID of the newly created estate
+     */
+    function createEstate(string calldata name) external returns (uint256 estateId) {
+        estateId = nextEstateId++;
 
-        FHE.allowThis(contractBalance);
-        FHE.allow(contractBalance, executor);
-        FHE.allowThis(totalAllocated);
-        FHE.allow(totalAllocated, executor);
+        estates[estateId] = Estate({
+            executor: msg.sender,
+            createdAt: block.timestamp,
+            finalized: false,
+            active: true,
+            name: name
+        });
 
-        emit EstateCreated(executor, _token);
+        // Initialize encrypted balances
+        estateBalances[estateId] = FHE.asEuint64(0);
+        totalAllocated[estateId] = FHE.asEuint64(0);
+
+        FHE.allowThis(estateBalances[estateId]);
+        FHE.allow(estateBalances[estateId], msg.sender);
+        FHE.allowThis(totalAllocated[estateId]);
+        FHE.allow(totalAllocated[estateId], msg.sender);
+
+        // Track in executor's estates
+        executorEstates[msg.sender].push(estateId);
+
+        emit EstateCreated(estateId, msg.sender, name);
     }
 
     /**
      * @notice Handle incoming ERC-7984 token transfers
+     * @dev The data parameter must contain the estateId to route the deposit
      */
     function onERC7984Received(
         address,
         address from,
         address,
         euint64 amount,
-        bytes calldata
+        bytes calldata data
     ) external override returns (bytes4) {
         if (msg.sender != address(token)) revert InvalidToken();
+        if (data.length < 32) revert MissingEstateId();
 
-        // Add to contract balance
-        contractBalance = FHE.add(contractBalance, amount);
-        FHE.allowThis(contractBalance);
-        FHE.allow(contractBalance, executor);
+        // Decode estate ID from data
+        uint256 estateId = abi.decode(data, (uint256));
+        if (estates[estateId].executor == address(0)) revert EstateNotFound();
 
-        emit TokensDeposited(from);
+        // Add to estate balance
+        estateBalances[estateId] = FHE.add(estateBalances[estateId], amount);
+        FHE.allowThis(estateBalances[estateId]);
+        FHE.allow(estateBalances[estateId], estates[estateId].executor);
+
+        emit TokensDeposited(estateId, from);
         return IERC7984Receiver.onERC7984Received.selector;
     }
 
     /**
      * @notice Add an heir with an encrypted allocation
+     * @param estateId The estate to add the heir to
      * @param heir Address of the heir
      * @param encryptedAllocation Encrypted allocation amount
      * @param inputProof Proof for the encrypted input
      */
     function addHeir(
+        uint256 estateId,
         address heir,
         externalEuint64 encryptedAllocation,
         bytes calldata inputProof
-    ) external onlyExecutor notFinalized estateActive {
+    ) external onlyEstateExecutor(estateId) notFinalized(estateId) estateActive(estateId) {
         if (heir == address(0)) revert ZeroAddress();
-        if (isHeir[heir]) revert AlreadyHeir();
+        if (isHeirOf[estateId][heir]) revert AlreadyHeir();
 
         euint64 allocation = FHE.fromExternal(encryptedAllocation, inputProof);
 
         // Store allocation
-        allocations[heir] = allocation;
-        isHeir[heir] = true;
-        heirs.push(heir);
+        allocations[estateId][heir] = allocation;
+        isHeirOf[estateId][heir] = true;
+        estateHeirs[estateId].push(heir);
 
         // Update total allocated
-        totalAllocated = FHE.add(totalAllocated, allocation);
+        totalAllocated[estateId] = FHE.add(totalAllocated[estateId], allocation);
 
         // Set ACL permissions
-        // Contract needs access for transfers
         FHE.allowThis(allocation);
-        // Heir can only see their own allocation
         FHE.allow(allocation, heir);
-        // Executor can see all allocations
-        FHE.allow(allocation, executor);
+        FHE.allow(allocation, estates[estateId].executor);
 
-        // Update total allocated permissions
-        FHE.allowThis(totalAllocated);
-        FHE.allow(totalAllocated, executor);
+        FHE.allowThis(totalAllocated[estateId]);
+        FHE.allow(totalAllocated[estateId], estates[estateId].executor);
 
-        emit HeirAdded(heir);
+        // Track in heir's estates
+        heirEstates[heir].push(estateId);
+
+        emit HeirAdded(estateId, heir);
     }
 
     /**
      * @notice Remove an heir (only before finalization)
+     * @param estateId The estate to remove the heir from
      * @param heir Address of the heir to remove
      */
-    function removeHeir(address heir) external onlyExecutor notFinalized estateActive {
-        if (!isHeir[heir]) revert NotHeir();
+    function removeHeir(
+        uint256 estateId,
+        address heir
+    ) external onlyEstateExecutor(estateId) notFinalized(estateId) estateActive(estateId) {
+        if (!isHeirOf[estateId][heir]) revert NotHeir();
 
         // Subtract from total allocated
-        totalAllocated = FHE.sub(totalAllocated, allocations[heir]);
-        FHE.allowThis(totalAllocated);
-        FHE.allow(totalAllocated, executor);
+        totalAllocated[estateId] = FHE.sub(totalAllocated[estateId], allocations[estateId][heir]);
+        FHE.allowThis(totalAllocated[estateId]);
+        FHE.allow(totalAllocated[estateId], estates[estateId].executor);
 
         // Clear allocation
-        allocations[heir] = FHE.asEuint64(0);
-        isHeir[heir] = false;
+        allocations[estateId][heir] = FHE.asEuint64(0);
+        isHeirOf[estateId][heir] = false;
 
         // Remove from heirs array
+        address[] storage heirs = estateHeirs[estateId];
         for (uint256 i = 0; i < heirs.length; i++) {
             if (heirs[i] == heir) {
                 heirs[i] = heirs[heirs.length - 1];
@@ -177,108 +222,155 @@ contract InheritanceDistribution is IERC7984Receiver, ZamaEthereumConfig {
             }
         }
 
-        emit HeirRemoved(heir);
+        // Remove from heir's estates index
+        _removeFromArray(heirEstates[heir], estateId);
+
+        emit HeirRemoved(estateId, heir);
     }
 
     /**
-     * @notice Finalize the estate (locks all allocations)
+     * @notice Finalize an estate (locks all allocations)
+     * @param estateId The estate to finalize
      */
-    function finalizeEstate() external onlyExecutor notFinalized estateActive {
-        finalized = true;
-        emit EstateFinalized();
+    function finalizeEstate(
+        uint256 estateId
+    ) external onlyEstateExecutor(estateId) notFinalized(estateId) estateActive(estateId) {
+        estates[estateId].finalized = true;
+        emit EstateFinalized(estateId);
     }
 
     /**
-     * @notice Get the caller's allocation (for heirs)
+     * @notice Get the caller's allocation for a specific estate
+     * @param estateId The estate to query
      * @return The encrypted allocation amount
      */
-    function getMyAllocation() external view returns (euint64) {
-        if (!isHeir[msg.sender]) revert NotHeir();
-        return allocations[msg.sender];
+    function getMyAllocation(uint256 estateId) external view estateExists(estateId) returns (euint64) {
+        if (!isHeirOf[estateId][msg.sender]) revert NotHeir();
+        return allocations[estateId][msg.sender];
     }
 
     /**
      * @notice Get a specific heir's allocation (executor only)
+     * @param estateId The estate to query
      * @param heir Address of the heir
      * @return The encrypted allocation amount
      */
-    function getAllocation(address heir) external view onlyExecutor returns (euint64) {
-        return allocations[heir];
+    function getAllocation(
+        uint256 estateId,
+        address heir
+    ) external view onlyEstateExecutor(estateId) returns (euint64) {
+        return allocations[estateId][heir];
     }
 
     /**
-     * @notice Claim inheritance allocation (for heirs, after finalization)
+     * @notice Claim inheritance allocation from a specific estate
+     * @param estateId The estate to claim from
      */
-    function claimAllocation() external isEstateFinalized estateActive {
-        if (!isHeir[msg.sender]) revert NotHeir();
-        if (claimed[msg.sender]) revert AlreadyClaimed();
+    function claimAllocation(
+        uint256 estateId
+    ) external isEstateFinalized(estateId) estateActive(estateId) {
+        if (!isHeirOf[estateId][msg.sender]) revert NotHeir();
+        if (claimed[estateId][msg.sender]) revert AlreadyClaimed();
 
-        euint64 amount = allocations[msg.sender];
-        claimed[msg.sender] = true;
+        euint64 amount = allocations[estateId][msg.sender];
+        claimed[estateId][msg.sender] = true;
 
-        // Transfer tokens from contract to heir
-        // The contract must be set as an operator for itself on the token
         token.confidentialTransferFrom(address(this), msg.sender, amount);
 
-        emit AllocationClaimed(msg.sender);
+        emit AllocationClaimed(estateId, msg.sender);
     }
 
     /**
-     * @notice Get all heir addresses (public - addresses visible)
+     * @notice Get all heir addresses for an estate
+     * @param estateId The estate to query
      * @return Array of heir addresses
      */
-    function getHeirs() external view returns (address[] memory) {
-        return heirs;
+    function getHeirs(uint256 estateId) external view returns (address[] memory) {
+        return estateHeirs[estateId];
     }
 
     /**
-     * @notice Get the number of heirs
+     * @notice Get the number of heirs for an estate
+     * @param estateId The estate to query
      * @return Number of heirs
      */
-    function getHeirCount() external view returns (uint256) {
-        return heirs.length;
+    function getHeirCount(uint256 estateId) external view returns (uint256) {
+        return estateHeirs[estateId].length;
     }
 
     /**
      * @notice Get estate information
-     * @return _executor The executor address
-     * @return _token The token address
-     * @return _createdAt Creation timestamp
-     * @return _finalized Whether the estate is finalized
-     * @return _active Whether the estate is active
+     * @param estateId The estate to query
      */
-    function getEstateInfo() external view returns (
+    function getEstateInfo(uint256 estateId) external view returns (
         address _executor,
-        address _token,
         uint256 _createdAt,
         bool _finalized,
-        bool _active
+        bool _active,
+        string memory _name
     ) {
-        return (executor, address(token), createdAt, finalized, active);
+        Estate storage estate = estates[estateId];
+        return (estate.executor, estate.createdAt, estate.finalized, estate.active, estate.name);
     }
 
     /**
-     * @notice Get contract's token balance (executor only)
+     * @notice Get estates where caller is executor
+     * @return Array of estate IDs
+     */
+    function getMyExecutorEstates() external view returns (uint256[] memory) {
+        return executorEstates[msg.sender];
+    }
+
+    /**
+     * @notice Get estates where caller is heir
+     * @return Array of estate IDs
+     */
+    function getMyHeirEstates() external view returns (uint256[] memory) {
+        return heirEstates[msg.sender];
+    }
+
+    /**
+     * @notice Get contract's token balance for an estate (executor only)
+     * @param estateId The estate to query
      * @return The encrypted balance
      */
-    function getContractBalance() external view onlyExecutor returns (euint64) {
-        return contractBalance;
+    function getContractBalance(
+        uint256 estateId
+    ) external view onlyEstateExecutor(estateId) returns (euint64) {
+        return estateBalances[estateId];
     }
 
     /**
-     * @notice Get total allocated amount (executor only)
+     * @notice Get total allocated amount for an estate (executor only)
+     * @param estateId The estate to query
      * @return The encrypted total allocated
      */
-    function getTotalAllocated() external view onlyExecutor returns (euint64) {
-        return totalAllocated;
+    function getTotalAllocated(
+        uint256 estateId
+    ) external view onlyEstateExecutor(estateId) returns (euint64) {
+        return totalAllocated[estateId];
     }
 
     /**
-     * @notice Check if an heir has claimed
+     * @notice Check if an heir has claimed from an estate
+     * @param estateId The estate to query
      * @param heir Address to check
      * @return Whether the heir has claimed
      */
-    function hasClaimed(address heir) external view returns (bool) {
-        return claimed[heir];
+    function hasClaimed(uint256 estateId, address heir) external view returns (bool) {
+        return claimed[estateId][heir];
+    }
+
+    /**
+     * @notice Internal helper to remove a value from an array
+     */
+    function _removeFromArray(uint256[] storage arr, uint256 value) internal {
+        for (uint256 i = 0; i < arr.length; i++) {
+            if (arr[i] == value) {
+                arr[i] = arr[arr.length - 1];
+                arr.pop();
+                break;
+            }
+        }
     }
 }

@@ -4,6 +4,7 @@ A private inheritance distribution platform built on Zama FHEVM. Heirs can only 
 
 ## Features
 
+- **Multi-Estate Support** - Single contract manages multiple independent estates
 - **Private Allocations** - Heir amounts encrypted via FHE, visible only to the individual heir
 - **Executor Oversight** - Full visibility for the executor for legal compliance
 - **Dispute Prevention** - Cryptographic guarantee that heirs cannot see siblings' allocations
@@ -62,8 +63,8 @@ A private inheritance distribution platform built on Zama FHEVM. Heirs can only 
 
 | Contract | Address |
 |----------|---------|
-| InheritanceToken | [0xAA08392dCe7F8048a7Fe98AD99Db426A55572Fb7](https://sepolia.etherscan.io/address/0xAA08392dCe7F8048a7Fe98AD99Db426A55572Fb7) |
-| InheritanceDistribution | [0x83Aa168738009905576b0D42Eb94e2841825A318](https://sepolia.etherscan.io/address/0x83Aa168738009905576b0D42Eb94e2841825A318) |
+| InheritanceToken | [0x6EA84DEB4dF5Efb79B26Ddf2E26873a509192fEa](https://sepolia.etherscan.io/address/0x6EA84DEB4dF5Efb79B26Ddf2E26873a509192fEa) |
+| InheritanceDistribution | [0xf8d9B44c27e916FBd50d2815A53e2B3422a81B79](https://sepolia.etherscan.io/address/0xf8d9B44c27e916FBd50d2815A53e2B3422a81B79) |
 
 ## Quick Start
 
@@ -86,4 +87,4 @@ cd frontend && npm install && npm run dev
 - Solidity 0.8.24 + Zama FHEVM v0.9
 - Hardhat
 - React + Vite + TypeScript
-- @zama-fhe/relayer-sdk 0.3.0-5
+- @zama-fhe/relayer-sdk

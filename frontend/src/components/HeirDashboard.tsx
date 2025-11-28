@@ -3,7 +3,7 @@ import { Eye, RefreshCw } from "lucide-react";
 import { EstateStatus } from "./EstateStatus";
 import { ClaimButton } from "./ClaimButton";
 import { LoadingState } from "./LoadingState";
-import type { EstateInfo } from "../hooks";
+import type { EstateInfo } from "../types";
 import "./HeirDashboard.css";
 
 interface HeirDashboardProps {
@@ -53,9 +53,9 @@ export function HeirDashboard({
   return (
     <div className="heir-dashboard">
       <div className="dashboard-header">
-        <h1>Your Inheritance</h1>
+        <h1>{estateInfo.name}</h1>
         <p className="text-secondary">
-          View and claim your private allocation from the estate.
+          View and claim your private allocation from this estate.
         </p>
       </div>
 

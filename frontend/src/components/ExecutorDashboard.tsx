@@ -4,7 +4,7 @@ import { EstateStatus } from "./EstateStatus";
 import { AllocationCard } from "./AllocationCard";
 import { AddHeirForm } from "./AddHeirForm";
 import { LoadingState } from "./LoadingState";
-import type { EstateInfo } from "../hooks";
+import type { EstateInfo } from "../types";
 import "./ExecutorDashboard.css";
 
 interface HeirData {
@@ -129,9 +129,9 @@ export function ExecutorDashboard({
     <div className="executor-dashboard">
       <div className="dashboard-header">
         <div>
-          <h1>Estate Management</h1>
+          <h1>{estateInfo.name}</h1>
           <p className="text-secondary">
-            Manage heirs and allocations for the inheritance distribution.
+            Manage heirs and allocations for this estate.
           </p>
         </div>
         <button

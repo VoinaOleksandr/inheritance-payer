@@ -1,5 +1,5 @@
 import { Clock, CheckCircle, Users, Lock } from "lucide-react";
-import type { EstateInfo } from "../hooks";
+import type { EstateInfo } from "../types";
 import "./EstateStatus.css";
 
 interface EstateStatusProps {
