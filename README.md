@@ -86,4 +86,4 @@ cd frontend && npm install && npm run dev
 - Solidity 0.8.24 + Zama FHEVM v0.9
 - Hardhat
 - React + Vite + TypeScript
-- @zama-fhe/relayer-sdk
+- @zama-fhe/relayer-sdk 0.3.0-5
